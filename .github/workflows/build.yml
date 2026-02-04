@@ -1,0 +1,36 @@
+name: Build (Unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build app (Release)
+        run: |
+          xcodebuild \
+            -project Kits.xcodeproj \
+            -scheme Kits \
+            -configuration Release \
+            -derivedDataPath build \
+            build
+
+      - name: Package app
+        run: |
+          mkdir -p dist
+          cp -R "build/Build/Products/Release/Kits.app" dist/
+          cd dist
+          zip -r Kits.app.zip Kits.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kits.app
+          path: dist/Kits.app.zip

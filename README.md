@@ -1,9 +1,13 @@
 # Kits
-<p>
-  <img src="Assets.xcassets/macOS/AppIcon.appiconset/icon-256x256@1x.png" width="96" alt="Kits app icon">
-</p>
-
 **A minimalist macOS menu bar utility for monitoring local Git repositories.**
+
+[![Build (Unsigned)](https://github.com/raunovillberg/Kits/actions/workflows/build.yml/badge.svg)](https://github.com/raunovillberg/Kits/actions/workflows/build.yml)
+
+> **Warning**
+>
+> This app is unsigned. After downloading it, you’ll need to open **System Settings → Privacy & Security**, scroll down, and approve **Kits** to run.
+>
+> Or build it yourself.
 
 Do you have too many projects you *definitely* will *actually* finish one day? And you need to figure out which repo you actually last edited? Or commited in?
 
