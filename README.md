@@ -11,12 +11,12 @@ Do you have too many projects you *definitely* will *actually* finish one day? A
 
 ### Detailed features
 
-- **Recursive Discovery** — Point to a root directory; Kits finds every nested repository.
-- **Dynamic Sorting** — Order by current branch activity, any branch activity, file system modifications or just alphabetically.
-- **Sync Tracking** — Visual indicators for ahead/behind counts relative to upstream.
-- **Worktree Support** — Detects and displays linked worktrees with clear visual distinction.
-- **Actionable** — Open repositories in Finder, VS Code, Fork, Tower, Terminal, iTerm2 - or define your own shell commands with `{path}` interpolation (Commands are validated for safety!)
-- **Native** — Built with SwiftUI for a lightweight, modern macOS experience.
+- **[Recursive Discovery](Kits/Services/GitScanner.swift)** — Point to a root directory; Kits finds every nested repository.
+- **[Dynamic Sorting](Kits/Models/GitRepository.swift)** — Order by current branch activity, any branch activity, file system modifications or just alphabetically.
+- **[Sync Tracking](Kits/Services/GitScanner.swift)** — Visual indicators for ahead/behind counts relative to upstream.
+- **[Worktree Support](Kits/Models/GitRepository.swift)** — Detects and displays linked worktrees with clear visual distinction.
+- **[Actionable](Kits/Models/RepoClickAction.swift)** — Open repositories in Finder, VS Code, Fork, Tower, Terminal, iTerm2 - or define your own shell commands with `{path}` interpolation (Commands are validated for safety!).
+- **[Native](Kits/Views/ContentView.swift)** — Built with SwiftUI for a lightweight, modern macOS experience.
 - **Slop** - Yes, it's slop. No, I haven't really looked at the code. YMMV.
 
 ### Settings
