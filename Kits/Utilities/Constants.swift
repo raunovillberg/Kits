@@ -162,6 +162,8 @@ enum Constants {
         static let minValidTimestamp: TimeInterval = 31536000
         /// Minimum valid timestamp for basic validation (must be > 0)
         static let minTimestampValue: TimeInterval = 0
+        /// Maximum tolerated future skew for timestamps (seconds)
+        static let maxFutureTimestampSkew: TimeInterval = 86400
     }
     
     // MARK: - Git Commands

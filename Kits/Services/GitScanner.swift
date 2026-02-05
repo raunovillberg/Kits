@@ -728,15 +728,13 @@ public class GitScanner {
         let porcelainStatus = hasUncommittedChanges ? statusLines.dropFirst().joined(separator: "\n") : nil
         
         let currentCommitResult = await runGitCommand(args: Constants.GitCommands.currentCommitArgs, at: path)
-        let lastCommitOnCurrentBranch = currentCommitResult.flatMap { timestamp -> Date? in
-            guard let time = TimeInterval(timestamp.trimmingCharacters(in: .whitespacesAndNewlines)), time > Constants.FileSystem.minTimestampValue else { return nil }
-            return Date(timeIntervalSince1970: time)
+        let lastCommitOnCurrentBranch = currentCommitResult.flatMap {
+            parseGitDate($0, minimumTimestamp: Constants.FileSystem.minTimestampValue)
         }
-        
+
         let anyCommitResult = await runGitCommand(args: Constants.GitCommands.anyCommitArgs, at: path)
-        let lastCommitOnAnyBranch = anyCommitResult.flatMap { timestamp -> Date? in
-            guard let time = TimeInterval(timestamp.trimmingCharacters(in: .whitespacesAndNewlines)), time > Constants.FileSystem.minTimestampValue else { return nil }
-            return Date(timeIntervalSince1970: time)
+        let lastCommitOnAnyBranch = anyCommitResult.flatMap {
+            parseGitDate($0, minimumTimestamp: Constants.FileSystem.minTimestampValue)
         }
         
         let lastFileModification: Date?
@@ -774,11 +772,8 @@ public class GitScanner {
     private func getLastFileModification(at path: String, status: String?) async -> Date? {
         guard let status = status, !status.isEmpty else {
             let commitResult = await runGitCommand(args: Constants.GitCommands.currentCommitArgs, at: path)
-            return commitResult.flatMap { timestamp -> Date? in
-                guard let time = TimeInterval(timestamp.trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
-                // Sanity check: if timestamp is 0 or negative, ignore it
-                guard time > Constants.FileSystem.minTimestampValue else { return nil }
-                return Date(timeIntervalSince1970: time)
+            return commitResult.flatMap {
+                parseGitDate($0, minimumTimestamp: Constants.FileSystem.minTimestampValue)
             }
         }
         
@@ -791,7 +786,7 @@ public class GitScanner {
             let fullPath = (path as NSString).appendingPathComponent(filePath)
             if let attrs = try? fileManager.attributesOfItem(atPath: fullPath), let modDate = attrs[.modificationDate] as? Date {
                 // Sanity check: ignore dates that are clearly wrong (e.g. 1970 or far future)
-                if modDate.timeIntervalSince1970 > Constants.FileSystem.minValidTimestamp {
+                if isReasonableDate(modDate, minimumTimestamp: Constants.FileSystem.minValidTimestamp) {
                     if latestDate == nil || modDate > latestDate! { latestDate = modDate }
                 }
             }
@@ -827,13 +822,30 @@ public class GitScanner {
                     if latestDate == nil || nestedDate > latestDate! { latestDate = nestedDate }
                 }
             } else if let values = try? item.resourceValues(forKeys: Set(keys)), let modDate = values.contentModificationDate {
-                if modDate.timeIntervalSince1970 > Constants.FileSystem.minValidTimestamp {
+                if isReasonableDate(modDate, minimumTimestamp: Constants.FileSystem.minValidTimestamp) {
                     if latestDate == nil || modDate > latestDate! { latestDate = modDate }
                 }
             }
         }
 
         return latestDate
+    }
+
+    private func parseGitDate(_ rawTimestamp: String, minimumTimestamp: TimeInterval) -> Date? {
+        let trimmed = rawTimestamp.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let timestamp = TimeInterval(trimmed) else { return nil }
+
+        let date = Date(timeIntervalSince1970: timestamp)
+        guard isReasonableDate(date, minimumTimestamp: minimumTimestamp) else { return nil }
+
+        return date
+    }
+
+    private func isReasonableDate(_ date: Date, minimumTimestamp: TimeInterval) -> Bool {
+        let timestamp = date.timeIntervalSince1970
+        let maxAllowedTimestamp = Date().addingTimeInterval(Constants.FileSystem.maxFutureTimestampSkew).timeIntervalSince1970
+
+        return timestamp > minimumTimestamp && timestamp <= maxAllowedTimestamp
     }
     
     /// Runs a git command with timeout protection and path validation

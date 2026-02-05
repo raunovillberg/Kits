@@ -84,6 +84,41 @@ final class GitScannerTests: XCTestCase {
         XCTAssertFalse(repo?.isClean ?? true)
     }
     
+    func testScanRepository_FutureCommitDatesAreIgnored() async {
+        let rootPath = "/Users/test"
+        let repoPath = "\(rootPath)/repo"
+
+        mockFileManager.files[rootPath] = true
+        mockSettings.rootFolderPath = rootPath
+
+        mockFileManager.files[repoPath] = true
+        mockFileManager.files["\(repoPath)/.git"] = true
+        mockFileManager.files["\(repoPath)/.git/refs"] = true
+        mockFileManager.files["\(repoPath)/.git/index"] = true
+
+        let futureTimestamp = Int(Date().addingTimeInterval(Constants.FileSystem.maxFutureTimestampSkew + 3600).timeIntervalSince1970)
+
+        mockShellExecutor.handlers["/usr/bin/git"] = { _, args in
+            if args == Constants.GitCommands.statusArgs {
+                return ("## main", 0, "")
+            } else if args == Constants.GitCommands.currentCommitArgs {
+                return ("\(futureTimestamp)", 0, "")
+            } else if args == Constants.GitCommands.anyCommitArgs {
+                return ("\(futureTimestamp)", 0, "")
+            } else if args == Constants.GitCommands.commonDirArgs {
+                return (".git", 0, "")
+            }
+            return ("", 0, "")
+        }
+
+        let repo = await scanner.scanRepository(at: repoPath)
+
+        XCTAssertNotNil(repo)
+        XCTAssertNil(repo?.lastCommitOnCurrentBranch)
+        XCTAssertNil(repo?.lastCommitOnAnyBranch)
+        XCTAssertNil(repo?.lastFileModification)
+    }
+
     func testFindGitRepositories_Recursive() async throws {
         let rootPath = "/Users/test/projects"
         

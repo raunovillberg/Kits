@@ -42,8 +42,8 @@ public struct GitRepository: Identifiable {
     static func compare(_ lhs: GitRepository, _ rhs: GitRepository, mode: SortMode) -> ComparisonResult {
         switch mode {
         case .alphabetical:
-            return lhs.name.localizedStandardCompare(rhs.name)
-            
+            return compareByNameThenPath(lhs, rhs)
+
         case .currentBranchCommit, .anyBranchCommit, .fileModification:
             let lhsDate = lhs.sortDate(for: mode) ?? Date.distantPast
             let rhsDate = rhs.sortDate(for: mode) ?? Date.distantPast
@@ -52,20 +52,29 @@ public struct GitRepository: Identifiable {
             } else if lhsDate < rhsDate {
                 return .orderedDescending
             } else {
-                return .orderedSame
+                // Deterministic tie-breaker for equal dates.
+                return compareByNameThenPath(lhs, rhs)
             }
         }
     }
-    
+
+    private static func compareByNameThenPath(_ lhs: GitRepository, _ rhs: GitRepository) -> ComparisonResult {
+        let byName = lhs.name.localizedStandardCompare(rhs.name)
+        if byName != .orderedSame {
+            return byName
+        }
+        return lhs.path.localizedStandardCompare(rhs.path)
+    }
+
     func sortDate(for mode: SortMode) -> Date? {
         switch mode {
         case .currentBranchCommit:
             return lastCommitOnCurrentBranch
         case .anyBranchCommit:
-            // For worktrees, use the most recent of: any branch commit OR folder modification.
-            // This ensures worktrees sort by when they were last touched, not just shared git history.
-            if isWorktree, let fileMod = lastFileModification, let anyCommit = lastCommitOnAnyBranch {
-                return max(fileMod, anyCommit)
+            // For worktrees, use the most recent available signal:
+            // any-branch commit time and/or file modification time.
+            if isWorktree {
+                return [lastCommitOnAnyBranch, lastFileModification].compactMap { $0 }.max()
             }
             return lastCommitOnAnyBranch
         case .fileModification:
