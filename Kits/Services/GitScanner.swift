@@ -20,6 +20,7 @@ public class GitScanner {
     var scannedReposCount: Int = 0
     var discoveryFoldersScanned: Int = 0
     var currentScanningPath: String?
+    var isShowingCachedSnapshot: Bool = false
     
     private let _isScanningSubject = CurrentValueSubject<Bool, Never>(false)
     var isScanningPublisher: AnyPublisher<Bool, Never> {
@@ -56,8 +57,11 @@ public class GitScanner {
     private var cancellables = Set<AnyCancellable>()
     private var currentScanTask: Task<Void, Never>?
     private let settings: Settings
+    private let directoryStore: DirectoryStoreProtocol
+    private let repositoryStore: RepositoryStoreProtocol
     private var isDeallocated = false
     private var scanStartTime: Date?
+    private var forceDiscoveryOnNextScan = false
     
     // Async-safe storage for cached git path
     private actor GitPathStore {
@@ -215,10 +219,18 @@ public class GitScanner {
         }
     }
     
-    public init(settings: Settings, fileManager: FileManagerProtocol = FileManager.default, shellExecutor: ShellExecutorProtocol = ShellExecutor()) {
+    public init(
+        settings: Settings,
+        fileManager: FileManagerProtocol = FileManager.default,
+        shellExecutor: ShellExecutorProtocol = ShellExecutor(),
+        directoryStore: DirectoryStoreProtocol = JSONDirectoryStore(),
+        repositoryStore: RepositoryStoreProtocol = JSONRepositoryStore()
+    ) {
         self.settings = settings
         self.fileManager = fileManager
         self.shellExecutor = shellExecutor
+        self.directoryStore = directoryStore
+        self.repositoryStore = repositoryStore
         
         // Watch for root folder changes and restart scanning
         settings.rootFolderPathPublisher
@@ -241,6 +253,8 @@ public class GitScanner {
         // Cancel any ongoing scan task
         currentScanTask?.cancel()
         currentScanTask = nil
+
+        forceDiscoveryOnNextScan = true
         
         // Reset state and optionally restart using structured concurrency
         Task { [weak self] in
@@ -255,6 +269,7 @@ public class GitScanner {
                 self.scannedReposCount = 0
                 self.discoveryFoldersScanned = 0
                 self.lastScanDate = nil
+                self.isShowingCachedSnapshot = false
             }
             self.repositoryCache.clear()
             
@@ -272,6 +287,11 @@ public class GitScanner {
     
     public func startScanning() {
         Logger.gitScanner.info("Starting scanner")
+
+        if let rootPath = settings.rootFolderPath {
+            preloadRepositoriesIfAvailable(for: rootPath)
+        }
+
         performScan()
         scheduleNextScan()
     }
@@ -360,6 +380,101 @@ public class GitScanner {
         }
     }
     
+    private func normalizedPath(_ path: String) -> String {
+        (path as NSString).standardizingPath
+    }
+
+    private func loadCachedRepositoryPaths(for rootPath: String) -> [String]? {
+        do {
+            guard let snapshot = try directoryStore.load() else {
+                return nil
+            }
+
+            guard normalizedPath(snapshot.rootFolderPath) == normalizedPath(rootPath) else {
+                return nil
+            }
+
+            let unique = Array(Set(snapshot.repositoryPaths.map(normalizedPath))).sorted()
+
+            Logger.gitScanner.info("Using cached repository discovery with \(unique.count) repositories")
+            return unique
+        } catch {
+            Logger.gitScanner.error("Failed to load cached repository discovery: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func saveCachedRepositoryPaths(_ paths: [String], for rootPath: String) {
+        let uniquePaths = Array(Set(paths.map(normalizedPath))).sorted()
+        let snapshot = DirectorySnapshot(rootFolderPath: normalizedPath(rootPath), repositoryPaths: uniquePaths)
+
+        do {
+            try directoryStore.save(snapshot)
+            Logger.gitScanner.info("Saved repository discovery cache with \(uniquePaths.count) repositories")
+        } catch {
+            Logger.gitScanner.error("Failed to save repository discovery cache: \(error.localizedDescription)")
+        }
+    }
+
+    private func resolveRepositoryPaths(for rootPath: String, forceDiscovery: Bool) async throws -> (paths: [String], usedCache: Bool) {
+        if !forceDiscovery, let cached = loadCachedRepositoryPaths(for: rootPath) {
+            return (cached, true)
+        }
+
+        let discovered = try await findGitRepositories(at: rootPath)
+        saveCachedRepositoryPaths(discovered, for: rootPath)
+        return (discovered, false)
+    }
+
+    private func loadCachedRepositories(for rootPath: String) -> (repositories: [GitRepository], updatedAt: Date)? {
+        do {
+            guard let snapshot = try repositoryStore.load() else {
+                return nil
+            }
+
+            guard normalizedPath(snapshot.rootFolderPath) == normalizedPath(rootPath) else {
+                return nil
+            }
+
+            if snapshot.repositories.isEmpty {
+                return nil
+            }
+
+            Logger.gitScanner.info("Loaded cached repository statuses for \(snapshot.repositories.count) repositories")
+            return (snapshot.repositories, snapshot.updatedAt)
+        } catch {
+            Logger.gitScanner.error("Failed to load cached repository statuses: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func saveCachedRepositories(_ repositories: [GitRepository], for rootPath: String, updatedAt: Date) {
+        let snapshot = RepositorySnapshot(
+            rootFolderPath: normalizedPath(rootPath),
+            updatedAt: updatedAt,
+            repositories: repositories
+        )
+
+        do {
+            try repositoryStore.save(snapshot)
+        } catch {
+            Logger.gitScanner.error("Failed to save cached repository statuses: \(error.localizedDescription)")
+        }
+    }
+
+    private func preloadRepositoriesIfAvailable(for rootPath: String) {
+        guard repositories.isEmpty else { return }
+        guard let cached = loadCachedRepositories(for: rootPath) else { return }
+
+        repositories = cached.repositories
+        lastScanDate = cached.updatedAt
+        isShowingCachedSnapshot = true
+
+        for repo in cached.repositories {
+            repositoryCache.set(path: repo.path, repository: repo)
+        }
+    }
+
     public func performScan(clearExisting: Bool = false) {
         guard !isScanning else {
             Logger.gitScanner.warning("Scan already in progress, skipping")
@@ -381,9 +496,13 @@ public class GitScanner {
         if clearExisting {
             self.repositories = []
             self.repositoryCache.clear()
+            self.isShowingCachedSnapshot = false
         }
         
-        Logger.gitScanner.info("Starting live refresh scan at: \(rootPath)")
+        let forceDiscovery = forceDiscoveryOnNextScan
+        forceDiscoveryOnNextScan = false
+
+        Logger.gitScanner.info("Starting live refresh scan at: \(rootPath) (force discovery: \(forceDiscovery))")
         
         currentScanTask = Task {
             scanStartTime = Date()
@@ -392,23 +511,32 @@ public class GitScanner {
             _ = await self.discoverGitPath()
             
             do {
-                // 1. Discovery (parallel directory traversal)
+                // 1. Resolve repositories (use cached discovery unless forced)
+                let resolveStart = Date()
                 try Task.checkCancellation()
-                let repoPaths = try await self.findGitRepositories(at: rootPath)
-                
+                let resolved = try await self.resolveRepositoryPaths(for: rootPath, forceDiscovery: forceDiscovery)
+                let repoPaths = resolved.paths
+                let resolveDuration = Date().timeIntervalSince(resolveStart)
+
                 try Task.checkCancellation()
-                
+
                 await MainActor.run {
+                    if resolved.usedCache {
+                        self.discoveryFoldersScanned = 0
+                        self.currentScanningPath = nil
+                    }
                     self.totalReposToScan = repoPaths.count
                     self.scannedReposCount = 0
                     self.currentScanningPath = nil
                 }
                 
-                // 2. Parallel scan
+                // 2. Parallel status refresh
+                let statusRefreshStart = Date()
                 let scannedReposResult = await withTaskGroup(of: GitRepository?.self) { group in
-                    let maxConcurrent = ProcessInfo.processInfo.activeProcessorCount
+                    let maxConcurrent = max(1, min(ProcessInfo.processInfo.activeProcessorCount, Constants.Scanning.maxConcurrentGitOperations))
                     var iterator = repoPaths.makeIterator()
                     var results: [GitRepository] = []
+                    var processedCount = 0
                     var isCancelled = false
                     
                     // Initial burst
@@ -437,12 +565,13 @@ public class GitScanner {
                             break
                         }
                         
+                        processedCount += 1
+                        await MainActor.run {
+                            self.scannedReposCount = processedCount
+                        }
+
                         if let r = repo {
                             results.append(r)
-                            let currentCount = results.count
-                            await MainActor.run {
-                                self.scannedReposCount = currentCount
-                            }
                         }
                         
                         if let nextPath = iterator.next() {
@@ -463,6 +592,8 @@ public class GitScanner {
                     return isCancelled ? [] : results
                 }
                 
+                let statusRefreshDuration = Date().timeIntervalSince(statusRefreshStart)
+
                 // Check if we were cancelled or timed out during the scan
                 try Task.checkCancellation()
                 
@@ -491,6 +622,8 @@ public class GitScanner {
                     return unique
                 }.value
                 
+                let scanCompletionDate = Date()
+
                 await MainActor.run {
                     // Check for reduced motion preference
                     let shouldAnimate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -503,8 +636,9 @@ public class GitScanner {
                         self.repositories = finalUniqueRepos
                     }
                     
-                    self.lastScanDate = Date()
+                    self.lastScanDate = scanCompletionDate
                     self.isScanning = false
+                    self.isShowingCachedSnapshot = false
                     self.scannedReposCount = 0
                     self.totalReposToScan = 0
                     self.currentScanningPath = nil
@@ -512,10 +646,14 @@ public class GitScanner {
                     // Announce scan completion to VoiceOver
                     self.announceScanCompletion(count: finalUniqueRepos.count)
                 }
+
+                self.saveCachedRepositories(finalUniqueRepos, for: rootPath, updatedAt: scanCompletionDate)
                 
                 if let startTime = scanStartTime {
                     let duration = Date().timeIntervalSince(startTime)
-                    Logger.gitScanner.info("Scan completed in \(String(format: "%.2f", duration))s")
+                    Logger.gitScanner.info(
+                        "Scan completed in \(String(format: "%.2f", duration))s (resolve: \(String(format: "%.2f", resolveDuration))s, status: \(String(format: "%.2f", statusRefreshDuration))s, repos: \(repoPaths.count), cache: \(resolved.usedCache ? "hit" : "miss"))"
+                    )
                 }
                 
             } catch is CancellationError {
@@ -671,22 +809,55 @@ public class GitScanner {
         
         return allRepos
     }
+
+    private func makeUnavailableRepository(path: String, existing: GitRepository?) -> GitRepository {
+        var repository = GitRepository(
+            path: path,
+            name: existing?.name ?? (path as NSString).lastPathComponent,
+            currentBranch: existing?.currentBranch ?? "unknown",
+            lastCommitOnCurrentBranch: existing?.lastCommitOnCurrentBranch,
+            lastCommitOnAnyBranch: existing?.lastCommitOnAnyBranch,
+            lastFileModification: existing?.lastFileModification,
+            aheadCount: 0,
+            behindCount: 0,
+            hasUncommittedChanges: false,
+            isClean: true,
+            gitCommonDir: existing?.gitCommonDir,
+            lastScanMarker: Date()
+        )
+        repository.isAvailable = false
+        return repository
+    }
     
     public func scanRepository(at path: String) async -> GitRepository? {
-        // 0. Check if we can skip based on file system stats
+        // 0. Determine repository availability first
         let gitPath = (path as NSString).appendingPathComponent(".git")
+        var isDirectory: ObjCBool = false
+        let exists = fileManager.fileExists(atPath: path, isDirectory: &isDirectory)
+        let hasGitDirectory = fileManager.fileExists(atPath: gitPath)
+        let cachedRepository = repositoryCache.get(path: path)
+
+        if !exists || !isDirectory.boolValue || !hasGitDirectory {
+            let unavailable = makeUnavailableRepository(path: path, existing: cachedRepository)
+            repositoryCache.set(path: path, repository: unavailable)
+            return unavailable
+        }
+
+        // 1. Check if we can skip based on file system stats
         let refsPath = (gitPath as NSString).appendingPathComponent("refs")
         let indexPath = (gitPath as NSString).appendingPathComponent("index")
-        
+
         let refsDate = (try? fileManager.attributesOfItem(atPath: refsPath)[.modificationDate] as? Date) ?? .distantPast
         let indexDate = (try? fileManager.attributesOfItem(atPath: indexPath)[.modificationDate] as? Date) ?? .distantPast
         let maxGitDate = max(refsDate, indexDate)
 
         let sortMode = await MainActor.run { self.settings.sortMode }
-        if sortMode != .fileModification {
-            if let cached = repositoryCache.get(path: path), let marker = cached.lastScanMarker, marker >= maxGitDate {
-                return cached
-            }
+        if sortMode != .fileModification,
+           let cached = cachedRepository,
+           cached.isAvailable,
+           let marker = cached.lastScanMarker,
+           marker >= maxGitDate {
+            return cached
         }
 
         let name = (path as NSString).lastPathComponent
@@ -732,22 +903,37 @@ public class GitScanner {
             parseGitDate($0, minimumTimestamp: Constants.FileSystem.minTimestampValue)
         }
 
-        let anyCommitResult = await runGitCommand(args: Constants.GitCommands.anyCommitArgs, at: path)
-        let lastCommitOnAnyBranch = anyCommitResult.flatMap {
-            parseGitDate($0, minimumTimestamp: Constants.FileSystem.minTimestampValue)
+        let shouldRefreshAnyBranchCommit = sortMode == .anyBranchCommit || cachedRepository?.lastCommitOnAnyBranch == nil
+        let lastCommitOnAnyBranch: Date?
+        if shouldRefreshAnyBranchCommit {
+            let anyCommitResult = await runGitCommand(args: Constants.GitCommands.anyCommitArgs, at: path)
+            lastCommitOnAnyBranch = anyCommitResult.flatMap {
+                parseGitDate($0, minimumTimestamp: Constants.FileSystem.minTimestampValue)
+            }
+        } else {
+            lastCommitOnAnyBranch = cachedRepository?.lastCommitOnAnyBranch
         }
         
         let lastFileModification: Date?
         if sortMode == .fileModification {
             lastFileModification = await getLastWorkingTreeModification(at: path)
         } else {
-            lastFileModification = await getLastFileModification(at: path, status: porcelainStatus)
+            lastFileModification = await getLastFileModification(
+                at: path,
+                status: porcelainStatus,
+                fallbackCommitDate: lastCommitOnCurrentBranch
+            )
         }
         let isClean = !hasUncommittedChanges && aheadCount == 0 && behindCount == 0
         
-        // Detect worktrees
-        let gitCommonDirResult = await runGitCommand(args: Constants.GitCommands.commonDirArgs, at: path)
-        let gitCommonDir = gitCommonDirResult?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Detect worktrees (reuse cached value if available)
+        let gitCommonDir: String?
+        if let cachedCommonDir = cachedRepository?.gitCommonDir {
+            gitCommonDir = cachedCommonDir
+        } else {
+            let gitCommonDirResult = await runGitCommand(args: Constants.GitCommands.commonDirArgs, at: path)
+            gitCommonDir = gitCommonDirResult?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         
         let repo = GitRepository(
             path: path,
@@ -769,12 +955,9 @@ public class GitScanner {
         return repo
     }
     
-    private func getLastFileModification(at path: String, status: String?) async -> Date? {
+    private func getLastFileModification(at path: String, status: String?, fallbackCommitDate: Date?) async -> Date? {
         guard let status = status, !status.isEmpty else {
-            let commitResult = await runGitCommand(args: Constants.GitCommands.currentCommitArgs, at: path)
-            return commitResult.flatMap {
-                parseGitDate($0, minimumTimestamp: Constants.FileSystem.minTimestampValue)
-            }
+            return fallbackCommitDate
         }
         
         var latestDate: Date?

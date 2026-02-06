@@ -76,6 +76,42 @@ public protocol SettingsStoreProtocol {
     func save(_ snapshot: SettingsSnapshot) throws
 }
 
+public struct DirectorySnapshot: Codable, Equatable {
+    public var version: Int
+    public var rootFolderPath: String
+    public var repositoryPaths: [String]
+
+    public init(version: Int = 1, rootFolderPath: String, repositoryPaths: [String]) {
+        self.version = version
+        self.rootFolderPath = rootFolderPath
+        self.repositoryPaths = repositoryPaths
+    }
+}
+
+public protocol DirectoryStoreProtocol {
+    func load() throws -> DirectorySnapshot?
+    func save(_ snapshot: DirectorySnapshot) throws
+}
+
+public struct RepositorySnapshot: Codable {
+    public var version: Int
+    public var rootFolderPath: String
+    public var updatedAt: Date
+    public var repositories: [GitRepository]
+
+    public init(version: Int = 1, rootFolderPath: String, updatedAt: Date, repositories: [GitRepository]) {
+        self.version = version
+        self.rootFolderPath = rootFolderPath
+        self.updatedAt = updatedAt
+        self.repositories = repositories
+    }
+}
+
+public protocol RepositoryStoreProtocol {
+    func load() throws -> RepositorySnapshot?
+    func save(_ snapshot: RepositorySnapshot) throws
+}
+
 public protocol ShellExecutorProtocol {
     func runProcess(executable: String, arguments: [String], environment: [String: String]?, currentDirectory: String?, timeout: TimeInterval) async throws -> (output: String, status: Int32, stderr: String)
 }

@@ -184,6 +184,10 @@ enum Constants {
         static let directoryName = ".kits"
         /// Settings file name
         static let fileName = "settings.json"
+        /// Cached repository discovery file name
+        static let directoriesFileName = "directories.json"
+        /// Cached repository statuses file name
+        static let repositoriesFileName = "repositories.json"
     }
     
     // MARK: - Security

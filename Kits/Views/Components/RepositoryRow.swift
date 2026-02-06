@@ -55,7 +55,7 @@ struct RepositoryRow: View {
                     .accessibilityLabel(String(format: NSLocalizedString("%d commits behind", comment: ""), repository.behindCount))
                 }
                 
-                Text(repository.currentBranch)
+                Text(repository.isAvailable ? repository.currentBranch : "Not found")
                     .font(.system(size: Constants.Typography.branchNameSize * uiScale))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -69,6 +69,7 @@ struct RepositoryRow: View {
         .padding(.horizontal, Constants.UI.rowPaddingHorizontal)
         .background(Color(NSColor.controlBackgroundColor))
         .cornerRadius(Constants.UI.rowCornerRadius)
+        .opacity(repository.isAvailable ? 1.0 : 0.45)
     }
 }
 

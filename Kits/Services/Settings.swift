@@ -38,6 +38,76 @@ public final class JSONSettingsStore: SettingsStoreProtocol {
     }
 }
 
+public final class JSONDirectoryStore: DirectoryStoreProtocol {
+    public static var defaultDirectoriesURL: URL {
+        JSONSettingsStore.defaultSettingsURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(Constants.SettingsFile.directoriesFileName, isDirectory: false)
+    }
+
+    private let fileURL: URL
+    private let fileManager: FileManager
+
+    public init(fileURL: URL = JSONDirectoryStore.defaultDirectoriesURL, fileManager: FileManager = .default) {
+        self.fileURL = fileURL
+        self.fileManager = fileManager
+    }
+
+    public func load() throws -> DirectorySnapshot? {
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
+
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(DirectorySnapshot.self, from: data)
+    }
+
+    public func save(_ snapshot: DirectorySnapshot) throws {
+        let directoryURL = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(snapshot)
+        try data.write(to: fileURL, options: .atomic)
+    }
+}
+
+public final class JSONRepositoryStore: RepositoryStoreProtocol {
+    public static var defaultRepositoriesURL: URL {
+        JSONSettingsStore.defaultSettingsURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(Constants.SettingsFile.repositoriesFileName, isDirectory: false)
+    }
+
+    private let fileURL: URL
+    private let fileManager: FileManager
+
+    public init(fileURL: URL = JSONRepositoryStore.defaultRepositoriesURL, fileManager: FileManager = .default) {
+        self.fileURL = fileURL
+        self.fileManager = fileManager
+    }
+
+    public func load() throws -> RepositorySnapshot? {
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
+
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(RepositorySnapshot.self, from: data)
+    }
+
+    public func save(_ snapshot: RepositorySnapshot) throws {
+        let directoryURL = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(snapshot)
+        try data.write(to: fileURL, options: .atomic)
+    }
+}
+
 // MARK: - Settings Class
 
 @Observable

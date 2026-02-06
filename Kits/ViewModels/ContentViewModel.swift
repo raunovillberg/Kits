@@ -55,6 +55,13 @@ final class ContentViewModel {
     /// Status text for the header (scanning progress or last update time)
     var statusText: String {
         if gitScanner.isScanning {
+            if gitScanner.isShowingCachedSnapshot && !gitScanner.repositories.isEmpty {
+                if gitScanner.totalReposToScan > 0 {
+                    return "Showing cached data, updating \(gitScanner.scannedReposCount)/\(gitScanner.totalReposToScan)..."
+                }
+                return "Showing cached data, updating..."
+            }
+
             if gitScanner.totalReposToScan > 0 {
                 return "Updating \(gitScanner.scannedReposCount)/\(gitScanner.totalReposToScan)..."
             } else if gitScanner.discoveryFoldersScanned > 0 {
@@ -64,6 +71,9 @@ final class ContentViewModel {
             }
         } else if let lastScan = gitScanner.lastScanDate {
             let count = gitScanner.repositories.count
+            if gitScanner.isShowingCachedSnapshot {
+                return "\(count) repos, showing cached data"
+            }
             return "\(count) repos, updated \(lastScan.relativeTimeDescription)"
         }
         return ""
@@ -169,7 +179,6 @@ final class ContentViewModel {
         
         // Check if the path was actually accepted
         if settings.rootFolderPath == path {
-            gitScanner.performScan(clearExisting: true)
             logger.debug("Set root folder to: \(path)")
         } else {
             // If it reverted, it was invalid

@@ -13,12 +13,14 @@ struct RepositoryListView: View {
             List(repositories) { repo in
                 RepositoryRow(repository: repo)
                     .contentShape(Rectangle())
+                    .disabled(!repo.isAvailable)
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(repo.accessibilityLabel)
-                    .accessibilityHint(NSLocalizedString("Double tap to open repository", comment: ""))
+                    .accessibilityHint(repo.isAvailable ? NSLocalizedString("Double tap to open repository", comment: "") : NSLocalizedString("Repository is unavailable", comment: ""))
                     .accessibilityValue(repo.accessibilityValue)
                     .accessibilityIdentifier("repo-\(repo.name)")
                     .onTapGesture {
+                        guard repo.isAvailable else { return }
                         onRepoTap(repo)
                     }
             }
