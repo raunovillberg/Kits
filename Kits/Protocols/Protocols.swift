@@ -76,6 +76,59 @@ public protocol SettingsStoreProtocol {
     func save(_ snapshot: SettingsSnapshot) throws
 }
 
+public struct DirectorySnapshot: Codable, Equatable {
+    public var version: Int
+    public var rootFolderPath: String
+    public var repositoryPaths: [String]
+    public var updatedAt: Date
+
+    public init(version: Int = 1, rootFolderPath: String, repositoryPaths: [String], updatedAt: Date = Date()) {
+        self.version = version
+        self.rootFolderPath = rootFolderPath
+        self.repositoryPaths = repositoryPaths
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case rootFolderPath
+        case repositoryPaths
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
+        rootFolderPath = try container.decode(String.self, forKey: .rootFolderPath)
+        repositoryPaths = try container.decodeIfPresent([String].self, forKey: .repositoryPaths) ?? []
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .distantPast
+    }
+}
+
+public protocol DirectoryStoreProtocol {
+    func load() throws -> DirectorySnapshot?
+    func save(_ snapshot: DirectorySnapshot) throws
+}
+
+public struct RepositorySnapshot: Codable {
+    public var version: Int
+    public var rootFolderPath: String
+    public var updatedAt: Date
+    public var repositories: [GitRepository]
+
+    public init(version: Int = 1, rootFolderPath: String, updatedAt: Date, repositories: [GitRepository]) {
+        self.version = version
+        self.rootFolderPath = rootFolderPath
+        self.updatedAt = updatedAt
+        self.repositories = repositories
+    }
+}
+
+public protocol RepositoryStoreProtocol {
+    func load() throws -> RepositorySnapshot?
+    func save(_ snapshot: RepositorySnapshot) throws
+}
+
 public protocol ShellExecutorProtocol {
     func runProcess(executable: String, arguments: [String], environment: [String: String]?, currentDirectory: String?, timeout: TimeInterval) async throws -> (output: String, status: Int32, stderr: String)
 }

@@ -49,7 +49,7 @@ struct HeaderView: View {
                     .help(sortModeDescription)
             }
             .buttonStyle(.plain)
-            .disabled(isScanning || !hasRootFolder)
+            .disabled(!hasRootFolder)
             .accessibilityLabel(Text("Sort by \(sortModeDescription)"))
             .accessibilityHint(NSLocalizedString("Click to change sort mode", comment: ""))
             .padding(.trailing, Constants.UI.headerButtonTrailingPadding * uiScale)

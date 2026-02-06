@@ -79,3 +79,39 @@ public class MockSettingsStore: SettingsStoreProtocol {
         self.snapshot = snapshot
     }
 }
+
+public class MockDirectoryStore: DirectoryStoreProtocol {
+    public var snapshot: DirectorySnapshot?
+    public var saveCallCount = 0
+
+    public init(snapshot: DirectorySnapshot? = nil) {
+        self.snapshot = snapshot
+    }
+
+    public func load() throws -> DirectorySnapshot? {
+        snapshot
+    }
+
+    public func save(_ snapshot: DirectorySnapshot) throws {
+        saveCallCount += 1
+        self.snapshot = snapshot
+    }
+}
+
+public class MockRepositoryStore: RepositoryStoreProtocol {
+    public var snapshot: RepositorySnapshot?
+    public var saveCallCount = 0
+
+    public init(snapshot: RepositorySnapshot? = nil) {
+        self.snapshot = snapshot
+    }
+
+    public func load() throws -> RepositorySnapshot? {
+        snapshot
+    }
+
+    public func save(_ snapshot: RepositorySnapshot) throws {
+        saveCallCount += 1
+        self.snapshot = snapshot
+    }
+}

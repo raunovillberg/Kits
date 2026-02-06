@@ -1,6 +1,6 @@
 import Foundation
 
-public struct GitRepository: Identifiable {
+public struct GitRepository: Identifiable, Codable {
     public var id: String { path }
     let path: String
     let name: String
@@ -12,6 +12,7 @@ public struct GitRepository: Identifiable {
     let behindCount: Int
     let hasUncommittedChanges: Bool
     let isClean: Bool
+    var isAvailable: Bool = true
     let gitCommonDir: String? // Points to shared git dir for worktrees
     var lastScanMarker: Date? // Used for stat-based skipping
     
@@ -112,12 +113,16 @@ public struct GitRepository: Identifiable {
     // MARK: - Accessibility
     
     var accessibilityLabel: String {
-        let prefix = isWorktree ? "Worktree, " : ""
-        return "\(prefix)\(name), branch \(currentBranch)"
+        let unavailablePrefix = isAvailable ? "" : "Unavailable, "
+        let worktreePrefix = isWorktree ? "Worktree, " : ""
+        return "\(unavailablePrefix)\(worktreePrefix)\(name), branch \(currentBranch)"
     }
     
     var accessibilityValue: String {
         var components: [String] = []
+        if !isAvailable {
+            components.append(NSLocalizedString("repository not found on disk", comment: ""))
+        }
         if hasUncommittedChanges {
             components.append(NSLocalizedString("has uncommitted changes", comment: ""))
         }

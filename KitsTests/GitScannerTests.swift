@@ -7,14 +7,24 @@ final class GitScannerTests: XCTestCase {
     var mockShellExecutor: MockShellExecutor!
     var mockSettings: Settings!
     var mockSettingsStore: MockSettingsStore!
+    var mockDirectoryStore: MockDirectoryStore!
+    var mockRepositoryStore: MockRepositoryStore!
     
     override func setUp() {
         super.setUp()
         mockFileManager = MockFileManager()
         mockShellExecutor = MockShellExecutor()
         mockSettingsStore = MockSettingsStore()
+        mockDirectoryStore = MockDirectoryStore()
+        mockRepositoryStore = MockRepositoryStore()
         mockSettings = Settings(store: mockSettingsStore, fileManager: mockFileManager)
-        scanner = GitScanner(settings: mockSettings, fileManager: mockFileManager, shellExecutor: mockShellExecutor)
+        scanner = GitScanner(
+            settings: mockSettings,
+            fileManager: mockFileManager,
+            shellExecutor: mockShellExecutor,
+            directoryStore: mockDirectoryStore,
+            repositoryStore: mockRepositoryStore
+        )
     }
     
     func testDiscoverGitPath_XcrunSuccess() async {
@@ -203,5 +213,147 @@ final class GitScannerTests: XCTestCase {
         
         // If git status fails, repo will have "unknown" branch and no changes.
         XCTAssertEqual(repo?.currentBranch, "unknown")
+    }
+
+    func testScanRepository_MissingRepositoryIsMarkedUnavailable() async {
+        let rootPath = "/Users/test"
+        let repoPath = "\(rootPath)/repo"
+
+        mockFileManager.files[rootPath] = true
+        mockSettings.rootFolderPath = rootPath
+
+        mockFileManager.files[repoPath] = true
+        mockFileManager.files["\(repoPath)/.git"] = true
+        mockFileManager.files["\(repoPath)/.git/refs"] = true
+        mockFileManager.files["\(repoPath)/.git/index"] = true
+
+        mockShellExecutor.handlers["/usr/bin/git"] = { _, args in
+            if args == Constants.GitCommands.statusArgs { return ("## main", 0, "") }
+            if args == Constants.GitCommands.currentCommitArgs { return ("1600000000", 0, "") }
+            if args == Constants.GitCommands.anyCommitArgs { return ("1600000000", 0, "") }
+            if args == Constants.GitCommands.commonDirArgs { return (".git", 0, "") }
+            return ("", 0, "")
+        }
+
+        let initialRepo = await scanner.scanRepository(at: repoPath)
+        XCTAssertEqual(initialRepo?.isAvailable, true)
+
+        mockFileManager.files[repoPath] = false
+        mockFileManager.files["\(repoPath)/.git"] = false
+
+        let missingRepo = await scanner.scanRepository(at: repoPath)
+        XCTAssertEqual(missingRepo?.isAvailable, false)
+    }
+
+    func testPerformScan_UsesCachedDiscoveryWhenAvailable() async {
+        let rootPath = "/Users/test/projects"
+        let repoPath = "\(rootPath)/cached-repo"
+
+        mockFileManager.files[rootPath] = true
+        mockSettings.rootFolderPath = rootPath
+
+        mockDirectoryStore.snapshot = DirectorySnapshot(rootFolderPath: rootPath, repositoryPaths: [repoPath])
+
+        mockFileManager.files[repoPath] = true
+        mockFileManager.files["\(repoPath)/.git"] = true
+        mockFileManager.files["\(repoPath)/.git/refs"] = true
+        mockFileManager.files["\(repoPath)/.git/index"] = true
+
+        mockShellExecutor.handlers["/usr/bin/git"] = { _, args in
+            if args == Constants.GitCommands.statusArgs { return ("## main", 0, "") }
+            if args == Constants.GitCommands.currentCommitArgs { return ("1600000000", 0, "") }
+            if args == Constants.GitCommands.anyCommitArgs { return ("1600000000", 0, "") }
+            if args == Constants.GitCommands.commonDirArgs { return (".git", 0, "") }
+            return ("", 0, "")
+        }
+
+        scanner.performScan()
+        await waitForScanCompletion()
+
+        XCTAssertEqual(scanner.repositories.count, 1)
+        XCTAssertEqual(scanner.repositories.first?.path, repoPath)
+        XCTAssertEqual(mockDirectoryStore.saveCallCount, 0)
+    }
+
+    func testPerformScan_RefreshesDiscoveryWhenCacheIsStale() async {
+        let rootPath = "/Users/test/projects"
+        let staleRepoPath = "\(rootPath)/stale-repo"
+        let newRepoPath = "\(rootPath)/new-repo"
+
+        mockFileManager.files[rootPath] = true
+        mockSettings.rootFolderPath = rootPath
+
+        mockDirectoryStore.snapshot = DirectorySnapshot(
+            rootFolderPath: rootPath,
+            repositoryPaths: [staleRepoPath],
+            updatedAt: Date.distantPast
+        )
+
+        mockFileManager.directories[rootPath] = [URL(fileURLWithPath: newRepoPath)]
+        mockFileManager.files[newRepoPath] = true
+        mockFileManager.files["\(newRepoPath)/.git"] = true
+        mockFileManager.files["\(newRepoPath)/.git/refs"] = true
+        mockFileManager.files["\(newRepoPath)/.git/index"] = true
+
+        mockShellExecutor.handlers["/usr/bin/git"] = { _, args in
+            if args == Constants.GitCommands.statusArgs { return ("## main", 0, "") }
+            if args == Constants.GitCommands.currentCommitArgs { return ("1600000000", 0, "") }
+            if args == Constants.GitCommands.anyCommitArgs { return ("1600000000", 0, "") }
+            if args == Constants.GitCommands.commonDirArgs { return (".git", 0, "") }
+            return ("", 0, "")
+        }
+
+        scanner.performScan()
+        await waitForScanCompletion()
+
+        XCTAssertEqual(scanner.repositories.count, 1)
+        XCTAssertEqual(scanner.repositories.first?.path, newRepoPath)
+        XCTAssertEqual(mockDirectoryStore.saveCallCount, 1)
+    }
+
+    func testStartScanning_PreloadsCachedRepositoryStatusesImmediately() {
+        let rootPath = "/Users/test/projects"
+        let repoPath = "\(rootPath)/cached-repo"
+
+        mockFileManager.files[rootPath] = true
+        mockSettings.rootFolderPath = rootPath
+
+        let cachedRepo = GitRepository(
+            path: repoPath,
+            name: "cached-repo",
+            currentBranch: "main",
+            lastCommitOnCurrentBranch: Date(timeIntervalSince1970: 1_600_000_000),
+            lastCommitOnAnyBranch: Date(timeIntervalSince1970: 1_600_000_000),
+            lastFileModification: Date(timeIntervalSince1970: 1_600_000_000),
+            aheadCount: 0,
+            behindCount: 0,
+            hasUncommittedChanges: false,
+            isClean: true,
+            gitCommonDir: ".git"
+        )
+
+        mockRepositoryStore.snapshot = RepositorySnapshot(
+            rootFolderPath: rootPath,
+            updatedAt: Date(timeIntervalSince1970: 1_600_000_100),
+            repositories: [cachedRepo]
+        )
+
+        scanner.startScanning()
+
+        XCTAssertEqual(scanner.repositories.count, 1)
+        XCTAssertEqual(scanner.repositories.first?.path, repoPath)
+
+        scanner.stopScanning()
+    }
+
+    private func waitForScanCompletion(timeoutSeconds: Double = 2.0) async {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if !scanner.isScanning {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTFail("Timed out waiting for scan completion")
     }
 }

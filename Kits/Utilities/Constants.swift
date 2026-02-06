@@ -139,6 +139,8 @@ enum Constants {
         static let maxDiscoveryDepth = 20
         /// Maximum duration for a full scan (seconds)
         static let maxScanDuration: TimeInterval = 300
+        /// Maximum age for cached repository discovery before forcing re-discovery (seconds)
+        static let discoveryCacheMaxAge: TimeInterval = 1800
     }
     
     // MARK: - Time Formatting
@@ -184,6 +186,10 @@ enum Constants {
         static let directoryName = ".kits"
         /// Settings file name
         static let fileName = "settings.json"
+        /// Cached repository discovery file name
+        static let directoriesFileName = "directories.json"
+        /// Cached repository statuses file name
+        static let repositoriesFileName = "repositories.json"
     }
     
     // MARK: - Security

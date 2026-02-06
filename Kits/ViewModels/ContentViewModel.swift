@@ -55,16 +55,40 @@ final class ContentViewModel {
     /// Status text for the header (scanning progress or last update time)
     var statusText: String {
         if gitScanner.isScanning {
+            if gitScanner.isShowingCachedSnapshot && !gitScanner.repositories.isEmpty {
+                if gitScanner.totalReposToScan > 0 {
+                    let format = NSLocalizedString("Showing cached data, updating %lld/%lld...", comment: "Status shown while cached repository data is visible and a live refresh with progress counters is running")
+                    return String(format: format, gitScanner.scannedReposCount, gitScanner.totalReposToScan)
+                }
+                return NSLocalizedString("Showing cached data, updating...", comment: "Status shown while cached repository data is visible and a live refresh is running")
+            }
+
             if gitScanner.totalReposToScan > 0 {
-                return "Updating \(gitScanner.scannedReposCount)/\(gitScanner.totalReposToScan)..."
+                switch gitScanner.currentScanPhase {
+                case "Updating commit data":
+                    let format = NSLocalizedString("Updating commit data %lld/%lld...", comment: "Status shown while refreshing commit-based repository metadata with progress counters")
+                    return String(format: format, gitScanner.scannedReposCount, gitScanner.totalReposToScan)
+                case "Updating file modifications":
+                    let format = NSLocalizedString("Updating file modifications %lld/%lld...", comment: "Status shown while refreshing file modification timestamps with progress counters")
+                    return String(format: format, gitScanner.scannedReposCount, gitScanner.totalReposToScan)
+                default:
+                    let format = NSLocalizedString("Updating %lld/%lld...", comment: "Status shown while refreshing repositories with progress counters")
+                    return String(format: format, gitScanner.scannedReposCount, gitScanner.totalReposToScan)
+                }
             } else if gitScanner.discoveryFoldersScanned > 0 {
-                return "Scanning \(gitScanner.discoveryFoldersScanned) folders..."
+                let format = NSLocalizedString("Scanning %lld folders...", comment: "Status shown while discovering repositories by scanning folders")
+                return String(format: format, gitScanner.discoveryFoldersScanned)
             } else {
-                return "Scanning..."
+                return NSLocalizedString("Scanning...", comment: "Status shown while scanning repositories")
             }
         } else if let lastScan = gitScanner.lastScanDate {
             let count = gitScanner.repositories.count
-            return "\(count) repos, updated \(lastScan.relativeTimeDescription)"
+            if gitScanner.isShowingCachedSnapshot {
+                let format = NSLocalizedString("%lld repos, showing cached data", comment: "Status shown with repository count when cached data is displayed")
+                return String(format: format, count)
+            }
+            let format = NSLocalizedString("%lld repos, updated %@", comment: "Status shown with repository count and relative update time")
+            return String(format: format, count, lastScan.relativeTimeDescription)
         }
         return ""
     }
@@ -132,14 +156,9 @@ final class ContentViewModel {
     
     /// Cycles to the next sort mode and re-sorts the repositories
     /// - Parameter reverse: Whether to cycle in reverse order
-    /// - Returns: Whether the sort was successful (will be false if already sorting)
+    /// - Returns: Whether the sort mode changed
     @discardableResult
     func cycleSortMode(reverse: Bool = false) -> Bool {
-        guard !gitScanner.isScanning else {
-            logger.debug("Cannot change sort mode while scanning")
-            return false
-        }
-        
         let allModes = SortMode.allCases
         let currentIndex = allModes.firstIndex(of: settings.sortMode) ?? 0
         
@@ -169,7 +188,6 @@ final class ContentViewModel {
         
         // Check if the path was actually accepted
         if settings.rootFolderPath == path {
-            gitScanner.performScan(clearExisting: true)
             logger.debug("Set root folder to: \(path)")
         } else {
             // If it reverted, it was invalid
