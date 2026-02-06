@@ -6,14 +6,14 @@ final class GitScannerTests: XCTestCase {
     var mockFileManager: MockFileManager!
     var mockShellExecutor: MockShellExecutor!
     var mockSettings: Settings!
-    var mockUserDefaults: MockUserDefaults!
+    var mockSettingsStore: MockSettingsStore!
     
     override func setUp() {
         super.setUp()
         mockFileManager = MockFileManager()
         mockShellExecutor = MockShellExecutor()
-        mockUserDefaults = MockUserDefaults()
-        mockSettings = Settings(userDefaults: mockUserDefaults, fileManager: mockFileManager)
+        mockSettingsStore = MockSettingsStore()
+        mockSettings = Settings(store: mockSettingsStore, fileManager: mockFileManager)
         scanner = GitScanner(settings: mockSettings, fileManager: mockFileManager, shellExecutor: mockShellExecutor)
     }
     

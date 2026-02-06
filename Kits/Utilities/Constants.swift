@@ -178,22 +178,12 @@ enum Constants {
         static let commonDirArgs = ["rev-parse", "--git-common-dir"]
     }
     
-    // MARK: - UserDefaults Keys
-    enum UserDefaultsKeys {
-        /// Key for root folder path setting
-        static let rootFolderPath = "rootFolderPath"
-        /// Key for sort mode setting
-        static let sortMode = "sortMode"
-        /// Key for click action setting
-        static let clickAction = "clickAction"
-        /// Key for custom command setting
-        static let customCommand = "customCommand"
-        /// Key for popover width setting
-        static let popoverWidth = "popoverWidth"
-        /// Key for popover height setting
-        static let popoverHeight = "popoverHeight"
-        /// Key for UI scale setting
-        static let uiScale = "uiScale"
+    // MARK: - Settings File
+    enum SettingsFile {
+        /// Settings directory name under the user's home folder
+        static let directoryName = ".kits"
+        /// Settings file name
+        static let fileName = "settings.json"
     }
     
     // MARK: - Security

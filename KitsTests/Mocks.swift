@@ -62,32 +62,20 @@ public class MockShellExecutor: ShellExecutorProtocol {
     }
 }
 
-public class MockUserDefaults: UserDefaultsProtocol {
-    public var storage: [String: Any] = [:]
-    
-    public init() {}
-    
-    public func string(forKey defaultName: String) -> String? {
-        return storage[defaultName] as? String
+public class MockSettingsStore: SettingsStoreProtocol {
+    public var snapshot: SettingsSnapshot?
+    public var saveCallCount = 0
+
+    public init(snapshot: SettingsSnapshot? = nil) {
+        self.snapshot = snapshot
     }
-    
-    public func set(_ value: Any?, forKey defaultName: String) {
-        storage[defaultName] = value
+
+    public func load() throws -> SettingsSnapshot? {
+        snapshot
     }
-    
-    public func integer(forKey defaultName: String) -> Int {
-        return storage[defaultName] as? Int ?? 0
-    }
-    
-    public func double(forKey defaultName: String) -> Double {
-        return storage[defaultName] as? Double ?? 0.0
-    }
-    
-    public func object(forKey defaultName: String) -> Any? {
-        return storage[defaultName]
-    }
-    
-    public func removeObject(forKey defaultName: String) {
-        storage.removeValue(forKey: defaultName)
+
+    public func save(_ snapshot: SettingsSnapshot) throws {
+        saveCallCount += 1
+        self.snapshot = snapshot
     }
 }

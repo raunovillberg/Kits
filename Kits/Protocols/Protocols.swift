@@ -17,13 +17,63 @@ public protocol FileManagerProtocol {
     func isReadableFile(atPath path: String) -> Bool
 }
 
-public protocol UserDefaultsProtocol {
-    func string(forKey defaultName: String) -> String?
-    func set(_ value: Any?, forKey defaultName: String)
-    func integer(forKey defaultName: String) -> Int
-    func double(forKey defaultName: String) -> Double
-    func object(forKey defaultName: String) -> Any?
-    func removeObject(forKey defaultName: String)
+public struct SettingsSnapshot: Codable, Equatable {
+    public var version: Int
+    public var rootFolderPath: String?
+    public var sortMode: String?
+    public var clickAction: String?
+    public var customCommand: String?
+    public var popoverWidth: Double?
+    public var popoverHeight: Double?
+    public var uiScale: Double?
+
+    public init(
+        version: Int,
+        rootFolderPath: String? = nil,
+        sortMode: String? = nil,
+        clickAction: String? = nil,
+        customCommand: String? = nil,
+        popoverWidth: Double? = nil,
+        popoverHeight: Double? = nil,
+        uiScale: Double? = nil
+    ) {
+        self.version = version
+        self.rootFolderPath = rootFolderPath
+        self.sortMode = sortMode
+        self.clickAction = clickAction
+        self.customCommand = customCommand
+        self.popoverWidth = popoverWidth
+        self.popoverHeight = popoverHeight
+        self.uiScale = uiScale
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case rootFolderPath
+        case sortMode
+        case clickAction
+        case customCommand
+        case popoverWidth
+        case popoverHeight
+        case uiScale
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 0
+        rootFolderPath = try container.decodeIfPresent(String.self, forKey: .rootFolderPath)
+        sortMode = try container.decodeIfPresent(String.self, forKey: .sortMode)
+        clickAction = try container.decodeIfPresent(String.self, forKey: .clickAction)
+        customCommand = try container.decodeIfPresent(String.self, forKey: .customCommand)
+        popoverWidth = try container.decodeIfPresent(Double.self, forKey: .popoverWidth)
+        popoverHeight = try container.decodeIfPresent(Double.self, forKey: .popoverHeight)
+        uiScale = try container.decodeIfPresent(Double.self, forKey: .uiScale)
+    }
+}
+
+public protocol SettingsStoreProtocol {
+    func load() throws -> SettingsSnapshot?
+    func save(_ snapshot: SettingsSnapshot) throws
 }
 
 public protocol ShellExecutorProtocol {
@@ -42,4 +92,3 @@ extension FileManager: FileManagerProtocol {
         }
     }
 }
-extension UserDefaults: UserDefaultsProtocol {}
