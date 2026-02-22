@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var settings: Settings
-    var launchAtLoginHelper: LaunchAtLoginHelper
+    @Bindable var launchAtLoginHelper: LaunchAtLoginHelper
     
     private var uiScale: CGFloat {
         CGFloat(settings.uiScale)
@@ -131,11 +131,8 @@ struct SettingsView: View {
                         .font(.uiScaled(.subheadline, scale: uiScale))
                         .foregroundColor(.secondary)
                     
-                    Toggle(NSLocalizedString("Launch at Login", comment: ""), isOn: Binding(
-                        get: { launchAtLoginHelper.isEnabled },
-                        set: { launchAtLoginHelper.isEnabled = $0 }
-                    ))
-                    .font(.uiScaled(.body, scale: uiScale))
+                    Toggle(NSLocalizedString("Launch at Login", comment: ""), isOn: $launchAtLoginHelper.isEnabled)
+                        .font(.uiScaled(.body, scale: uiScale))
                 }
             }
             .padding(Constants.UI.settingsPadding)

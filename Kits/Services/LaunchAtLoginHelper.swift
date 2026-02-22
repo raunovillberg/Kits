@@ -1,6 +1,7 @@
 import Foundation
 import os.log
 
+@Observable
 class LaunchAtLoginHelper {
     private let bundleId = Bundle.main.bundleIdentifier ?? "es.makingvideogam.Kits"
     
@@ -32,27 +33,36 @@ class LaunchAtLoginHelper {
             return nil
         }
     }
-    
-    var isEnabled: Bool {
-        get {
-            guard let path = launchAgentPath else { return false }
-            return FileManager.default.fileExists(atPath: path.path)
-        }
-        set {
-            if newValue {
+
+    var isEnabled: Bool = false {
+        didSet {
+            guard !isUpdating else { return }
+            isUpdating = true
+            
+            if isEnabled {
                 do {
                     try enable()
                 } catch {
                     Logger.general.error("Failed to enable launch at login: \(error.localizedDescription)")
-                    // Notify UI if possible, but at least we're throwing in enable()
+                    isEnabled = false
                 }
             } else {
                 do {
                     try disable()
                 } catch {
                     Logger.general.error("Failed to disable launch at login: \(error.localizedDescription)")
+                    isEnabled = true
                 }
             }
+            
+            isUpdating = false
+        }
+    }
+    private var isUpdating = false
+
+    init() {
+        if let path = launchAgentPath {
+            isEnabled = FileManager.default.fileExists(atPath: path.path)
         }
     }
     
